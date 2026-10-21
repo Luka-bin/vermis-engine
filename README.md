@@ -1,4 +1,4 @@
-# ABYSSAL LITHOGRAPHY ENGINE // [REPOSITORY CODENAME]
+# ABYSSAL LITHOGRAPHY ENGINE // vermis-tribute-rpg 
 
 A modular, lightweight 2.5D survival-horror engine built with standard web technologies (HTML5, CSS3, and vanilla JavaScript). Designed around a grim, dark-fantasy aesthetic with a retro CRT/brutalist interface, seed-locked PRNG dungeon generation, and real-time with pause (RTwP) combat mechanics.
 
