@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vermis Engine: Telemetry Stress Test</title>
+    <style>
+        :root {
+            --bg-color: #000000;
+            --text-color: #ffffff;
+            --accent-red: #ff003c;
+            --crt-green: #33ff33;
+            --dark-gray: #1a1a1a;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: "Courier New", Courier, monospace;
+            text-transform: uppercase;
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* CRT Scanline Overlay */
+        body::after {
+            content: "";
+            position: absolute;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), 
+                        linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            background-size: 100% 2px, 3px 100%;
+            pointer-events: none;
+            z-index: 999;
+        }
+
+        /* Top Stage: Will eventually house the 2.5D Raycaster */
+        #visual-stage-canvas {
+            flex: 0 0 40%;
+            border-bottom: 2px solid var(--text-color);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            background: radial-gradient(circle, #111 0%, #000 100%);
+            position: relative;
+        }
+
+        .engine-monitor {
+            display: none; /* Hidden during builder */
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 15px;
+            text-align: center;
+        }
+
+        .monitor-box {
+            border: 1px solid #333;
+            padding: 15px;
+            background: rgba(0,0,0,0.8);
+        }
+
+        .monitor-val { font-size: 2em; font-weight: bold; margin-top: 10px; }
+        .val-red { color: var(--accent-red); }
+        .val-green { color: var(--crt-green); }
+
+        /* Bottom Deck: Telemetry and Prompts */
+        #rolling-telemetry-deck {
+            flex: 1;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            position: relative;
+        }
+
+        h1, h2, h3 { margin: 0 0 10px 0; display: inline-block; }
+        .header-line { border-bottom: 2px solid var(--text-color); margin-bottom: 15px; padding-bottom: 5px; }
+
+        /* Builder Layout */
+        #builder-view { display: flex; flex-direction: column; gap: 20px; max-width: 900px; margin: 0 auto; width: 100%; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+        .stat-row { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed #333; padding: 6px 0; }
+        
+        button {
+            background: var(--text-color);
+            color: var(--bg-color);
+            border: none;
+            padding: 10px 15px;
+            font-family: inherit;
+            font-weight: bold;
+            cursor: pointer;
+            text-transform: uppercase;
+            transition: 0.1s;
+        }
+        
+        button:hover:not(:disabled) { background: var(--accent-red); color: #fff; }
+        button:disabled { opacity: 0.3; cursor: not-allowed; }
+        .btn-small { padding: 2px 10px; margin-left: 5px; font-size: 1.2em;}
+
+        /* Engine/RPG Layout */
+        #rpg-view { display: none; flex-direction: column; height: 100%; max-width: 900px; margin: 0 auto; width: 100%; }
+        
+        #telemetry-log {
+            flex: 1;
+            border: 1px solid #333;
+            background: var(--dark-gray);
+            padding: 15px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .log-entry { border-left: 3px solid #555; padding-left: 10px; color: #ccc; }
+        .log-sys { border-left-color: var(--crt-green); color: var(--text-color); font-weight: bold; }
+        .log-warn { border-left-color: var(--accent-red); color: var(--accent-red); }
+
+        #action-panel {
+            border: 2px solid var(--text-color);
+            padding: 20px;
+            min-height: 180px;
+        }
+
+        .action-grid { display: flex; flex-direction: column; gap: 10px; margin-top: 15px; }
+
+    </style>
+</head>
+<body>
+
+    <!-- TOP VISUAL STAGE -->
+    <div id="visual-stage-canvas">
+        <div id="builder-title" style="text-align: center; margin-top: 40px;">
+            <h1 class="header-line">Terminal 01: Host Instantiation</h1>
+            <p>Assign parameters. The labyrinth awaits.</p>
+        </div>
+
+        <div class="engine-monitor" id="engine-monitor">
+            <div class="monitor-box">
+                <div>Complications (Max 12)</div>
+                <div class="monitor-val val-red" id="mon-comp">0</div>
+                <div id="active-comps" style="font-size: 0.8em; margin-top: 5px; color:#aaa;">None</div>
+            </div>
+            <div class="monitor-box">
+                <div>Solace (Action Economy)</div>
+                <div class="monitor-val val-green" id="mon-solace">3</div>
+            </div>
+            <div class="monitor-box">
+                <div>AI Malignancy</div>
+                <div class="monitor-val val-red" id="mon-malignancy">0</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- BOTTOM TELEMETRY DECK -->
+    <div id="rolling-telemetry-deck">
+        
+        <!-- Phase 1: Builder -->
+        <div id="builder-view">
+            <div style="font-size: 1.2em; border: 1px solid var(--text-color); padding: 10px; text-align: center;">
+                Available Build Points: <span id="bp-display" class="val-red" style="font-weight:bold;">20</span>
+            </div>
+            
+            <div class="grid-2">
+                <div id="panel-characteristics">
+                    <h3 class="header-line">Characteristics (Cost: 1)</h3>
+                    <!-- Injected -->
+                </div>
+                <div id="panel-disciplines">
+                    <h3 class="header-line">Disciplines (Cost: 1)</h3>
+                    <!-- Injected -->
+                </div>
+            </div>
+            
+            <div class="grid-2">
+                <div>
+                    <h3 class="header-line">Distinction (Free)</h3>
+                    <select id="distinction-select" style="background:#000; color:#fff; border:1px solid #fff; padding:8px; font-family:inherit; width:100%; text-transform:uppercase;">
+                        <option value="Miner Knight">Miner Knight (+2 Subterranean)</option>
+                        <option value="Murk Sage">Murk Sage (+2 Occult/Miasma)</option>
+                        <option value="Cursed Fool">Cursed Fool (Unique Node Bypasses)</option>
+                    </select>
+                </div>
+                <div>
+                    <h3 class="header-line">Metacurrency (Cost: 2)</h3>
+                    <div class="stat-row">
+                        <span>Solace (Max 5)</span>
+                        <div>
+                            <span id="stat-solace" class="val-green" style="margin-right: 15px; font-weight:bold;">3</span>
+                            <button class="btn-small" onclick="modStat('solace', -1)">-</button>
+                            <button class="btn-small" onclick="modStat('solace', 1)">+</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 20px; margin-top: 10px;">
+                <button onclick="randomizeSeed()" style="flex: 1; background: #333;">Execute: Doomed Seed</button>
+                <button onclick="bootEngine()" id="btn-boot" style="flex: 2;">Initialize Engine Test</button>
+            </div>
+        </div>
+
+        <!-- Phase 2: RPG Combat / Dialog Trees -->
+        <div id="rpg-view">
+            <div id="telemetry-log">
+                <div class="log-sys">> Engine initialized. Subject descending into Pestilent Mines...</div>
+            </div>
+
+            <div id="action-panel">
+                <h2 id="prompt-title">Awaiting Telemetry...</h2>
+                <p id="prompt-desc" style="color: #ccc; margin-bottom: 10px;"></p>
+                <div id="prompt-math" style="font-size: 0.9em; color: var(--accent-red); margin-bottom: 15px; font-weight: bold;"></div>
+                
+                <div class="action-grid" id="action-buttons">
+                    <!-- Buttons injected -->
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+<script>
+    // --- 1. STATE & DATA ---
+    let points = 20;
+    
+    const stats = {
+        characteristics: {
+            brawn: { val: 2, min: 2, max: 8, cost: 1 },
+            agility: { val: 2, min: 2, max: 8, cost: 1 },
+            wits: { val: 2, min: 2, max: 8, cost: 1 },
+            willpower: { val: 2, min: 2, max: 8, cost: 1 }
+        },
+        disciplines: {
+            melee: { val: 0, min: 0, max: 5, cost: 1 },
+            athletics: { val: 0, min: 0, max: 5, cost: 1 },
+            scavenging: { val: 0, min: 0, max: 5, cost: 1 },
+            occult: { val: 0, min: 0, max: 5, cost: 1 }
+        },
+        solace: { val: 3, min: 3, max: 5, cost: 2 }
+    };
+
+    let engineState = {
+        distinction: "",
+        complicationVal: 0,
+        complicationNames: [],
+        malignancy: 0,
+        scenarioIndex: 0
+    };
+
+    // --- 2. BUILDER LOGIC ---
+    function renderBuilder() {
+        document.getElementById('bp-display').innerText = points;
+        
+        ['characteristics', 'disciplines'].forEach(cat => {
+            const panel = document.getElementById(`panel-${cat}`);
+            // Keep header, clear rows
+            panel.innerHTML = `<h3 class="header-line">${cat} (Cost: 1)</h3>`;
+            
+            for (const [key, data] of Object.entries(stats[cat])) {
+                panel.innerHTML += `
+                    <div class="stat-row">
+                        <span>${key}</span>
+                        <div>
+                            <span style="display:inline-block; width:30px; text-align:center; font-weight:bold;">${data.val}</span>
+                            <button class="btn-small" onclick="modStat('${cat}', '${key}', -1)">-</button>
+                            <button class="btn-small" onclick="modStat('${cat}', '${key}', 1)">+</button>
+                        </div>
+                    </div>
+                `;
+            }
+        });
+        document.getElementById('stat-solace').innerText = stats.solace.val;
+    }
+
+    function modStat(cat, key, amount) {
+        let obj = cat === 'solace' ? stats.solace : stats[cat][key];
+        let cost = obj.cost * amount;
+        
+        if (amount > 0 && points - cost < 0) return; 
+        if (obj.val + amount > obj.max || obj.val + amount < obj.min) return; 
+        
+        obj.val += amount;
+        points -= cost;
+        renderBuilder();
+    }
+
+    function randomizeSeed() {
+        points = 20;
+        for (let cat in stats.characteristics) stats.characteristics[cat].val = 2;
+        for (let cat in stats.disciplines) stats.disciplines[cat].val = 0;
+        stats.solace.val = 3;
+        points -= 8; // core stats cost
+
+        let pool = [
+            ...Object.keys(stats.characteristics).map(k => ({c:'characteristics', k})), 
+            ...Object.keys(stats.disciplines).map(k => ({c:'disciplines', k}))
+        ];
+        
+        while (points > 0) {
+            let target = pool[Math.floor(Math.random() * pool.length)];
+            let obj = stats[target.c][target.k];
+            if (obj.val < obj.max) {
+                obj.val++;
+                points--;
+            }
+        }
+        
+        const dists = document.getElementById('distinction-select');
+        dists.selectedIndex = Math.floor(Math.random() * dists.options.length);
+        renderBuilder();
+    }
+
+    function bootEngine() {
+        if (points > 0 && !confirm("Unspent BP detected. Initialize anyway?")) return;
+        
+        engineState.distinction = document.getElementById('distinction-select').value;
+        
+        // Swap UI
+        document.getElementById('builder-title').style.display = 'none';
+        document.getElementById('builder-view').style.display = 'none';
+        document.getElementById('engine-monitor').style.display = 'grid';
+        document.getElementById('rpg-view').style.display = 'flex';
+        
+        updateMonitor();
+        loadScenario();
+    }
+
+    // --- 3. RPG ENGINE STATE MACHINE ---
+    
+    // Calculate Base Action Value before drag
+    function getBaseAV(char, disc) {
+        return stats.characteristics[char].val + stats.disciplines[disc].val;
+    }
+
+    // Calculate Net Action Value (applies mechanical drag)
+    function getNetAV(baseAV) {
+        return Math.max(0, baseAV - engineState.complicationVal);
+    }
+
+    function updateMonitor() {
+        document.getElementById('mon-comp').innerText = `${engineState.complicationVal} / 12`;
+        document.getElementById('mon-solace').innerText = stats.solace.val;
+        document.getElementById('mon-malignancy').innerText = engineState.malignancy;
+        
+        if (engineState.complicationNames.length > 0) {
+            document.getElementById('active-comps').innerText = engineState.complicationNames.join(", ");
+            document.getElementById('active-comps').style.color = "var(--accent-red)";
+        }
+    }
+
+    function logTerminal(msg, type = "log-entry") {
+        const log = document.getElementById('telemetry-log');
+        log.innerHTML += `<div class="${type}">${msg}</div>`;
+        log.scrollTop = log.scrollHeight;
+    }
+
+    // --- 4. SCENARIO DATA & LOGIC ---
+    
+    const scenarios = [
+        {
+            title: "Obstacle: The Rusted Portcullis",
+            desc: "A heavy iron gate blocks the corridor. The scent of rot drifts from the gaps. It must be pried open to proceed.",
+            stat1: "brawn", stat2: "athletics", tn: 8,
+            setup: function() {
+                let base = getBaseAV(this.stat1, this.stat2);
+                let net = getNetAV(base);
+                document.getElementById('prompt-math').innerText = `CHECK: [BRAWN + ATHLETICS] vs TN ${this.tn}`;
+                
+                let opts = [];
+                if (net >= this.tn) {
+                    opts.push({ label: `Direct Resolution (AV ${net})`, action: () => {
+                        logTerminal(`> Base ${base} - Drag ${engineState.complicationVal} = AV ${net}. TN ${this.tn} cleared.`, "log-sys");
+                        logTerminal("> The gate screeches open cleanly.", "log-entry");
+                        advance();
+                    }});
+                } else {
+                    opts.push({ label: `Direct Resolution (AV ${net}) - WILL FAIL`, action: () => {
+                        logTerminal(`> Base ${base} - Drag ${engineState.complicationVal} = AV ${net}. Falls short of TN ${this.tn}.`, "log-warn");
+                        logTerminal("> The gate holds fast. The noise attracts attention.", "log-entry");
+                        advance();
+                    }});
+                    
+                    let deficit = this.tn - net;
+                    opts.push({ label: `Exert Force (Gain Complication: Torn Muscle ${deficit})`, action: () => {
+                        logTerminal(`> EXERTION PROTOCOL: Player forces success. Gap of ${deficit} bridged.`, "log-warn");
+                        applyComplication(`Torn Muscle`, deficit);
+                        advance();
+                    }});
+                }
+                renderOptions(opts);
+            }
+        },
+        {
+            title: "Threat: Corpse Sentry Ambush",
+            desc: "A Corpse Sentry drops from the ceiling, telegraphing a heavy cleaver strike directly at your skull.",
+            stat1: "agility", stat2: "athletics", tn: 9,
+            setup: function() {
+                let base = getBaseAV(this.stat1, this.stat2);
+                let net = getNetAV(base);
+                document.getElementById('prompt-math').innerText = `CHECK: [AGILITY + ATHLETICS] vs TN ${this.tn}`;
+                
+                let opts = [];
+                if (net >= this.tn) {
+                    opts.push({ label: `Evade (AV ${net})`, action: () => {
+                        logTerminal(`> Evasion successful. AV ${net} meets TN ${this.tn}.`, "log-sys");
+                        advance();
+                    }});
+                } else {
+                    let deficit = this.tn - net;
+                    if (stats.solace.val > 0) {
+                        opts.push({ label: `Burn ${deficit} Solace to Dodge`, action: () => {
+                            if(stats.solace.val >= deficit) {
+                                logTerminal(`> METACURRENCY BURN: ${deficit} Solace spent to dodge. Transferring to AI Malignancy.`, "log-sys");
+                                stats.solace.val -= deficit;
+                                engineState.malignancy += deficit;
+                                updateMonitor();
+                                advance();
+                            } else {
+                                alert("Insufficient Solace.");
+                            }
+                        }});
+                    }
+                    opts.push({ label: `Accept Hit (Gain Complication: Shattered Ribs 5)`, action: () => {
+                        logTerminal("> CRITICAL IMPACT. Defensive check failed.", "log-warn");
+                        applyComplication("Shattered Ribs", 5);
+                        advance();
+                    }});
+                }
+                renderOptions(opts);
+            }
+        },
+        {
+            title: "Opportunity: Retaliation",
+            desc: "The Corpse Sentry is off-balance. A clean strike will sever its spine.",
+            stat1: "brawn", stat2: "melee", tn: 5,
+            setup: function() {
+                let base = getBaseAV(this.stat1, this.stat2);
+                let net = getNetAV(base);
+                document.getElementById('prompt-math').innerText = `CHECK: [BRAWN + MELEE] vs TN ${this.tn}`;
+                
+                let opts = [];
+                opts.push({ label: `Strike (AV ${net})`, action: () => {
+                    if (net >= this.tn + 4) {
+                        logTerminal(`> HEROIC ADVANTAGE: AV ${net} obliterates TN ${this.tn}. Enemy decaptitated.`, "log-sys");
+                    } else if (net >= this.tn) {
+                        logTerminal(`> AV ${net} vs TN ${this.tn}. Enemy dispatched.`, "log-sys");
+                    } else {
+                        logTerminal(`> AV ${net} vs TN ${this.tn}. Your weapon bounces off rusted armor.`, "log-warn");
+                    }
+                    
+                    if (engineState.malignancy >= 2) {
+                        logTerminal("> MALIGNANCY THRESHOLD REACHED. AI INITIATING OVERRIDE.", "log-warn");
+                        setTimeout(() => {
+                            logTerminal("> Localized Toxic Fog spawned. Permanent +2 TN to all Agility checks.", "log-warn");
+                        }, 800);
+                    }
+                    setTimeout(() => { endSimulation(); }, 2000);
+                }});
+                renderOptions(opts);
+            }
+        }
+    ];
+
+    function loadScenario() {
+        if(engineState.complicationVal >= 12) {
+            deathSequence();
+            return;
+        }
+
+        if(engineState.scenarioIndex >= scenarios.length) return;
+        
+        let s = scenarios[engineState.scenarioIndex];
+        document.getElementById('prompt-title').innerText = s.title;
+        document.getElementById('prompt-desc').innerText = s.desc;
+        s.setup();
+    }
+
+    function advance() {
+        engineState.scenarioIndex++;
+        document.getElementById('action-buttons').innerHTML = ''; // clear
+        setTimeout(loadScenario, 1200);
+    }
+
+    function renderOptions(optsArray) {
+        const container = document.getElementById('action-buttons');
+        container.innerHTML = '';
+        optsArray.forEach(opt => {
+            let btn = document.createElement('button');
+            btn.innerText = opt.label;
+            btn.onclick = () => { 
+                container.innerHTML = ''; // Prevent double clicks
+                opt.action(); 
+            };
+            container.appendChild(btn);
+        });
+    }
+
+    function applyComplication(name, val) {
+        engineState.complicationVal += val;
+        engineState.complicationNames.push(`${name} (${val})`);
+        logTerminal(`> COMPLICATION ACQUIRED: ${name}. Mechanical Drag increased by ${val}.`, "log-warn");
+        updateMonitor();
+    }
+
+    function deathSequence() {
+        document.getElementById('prompt-title').innerText = "TERMINAL STATE";
+        document.getElementById('prompt-desc').innerText = "Complication threshold exceeded. The Wayfarer has succumbed to the labyrinth.";
+        document.getElementById('prompt-math').innerText = "SYSTEM HALTED";
+        document.getElementById('action-buttons').innerHTML = '<button onclick="location.reload()">Reboot Simulation</button>';
+    }
+
+    function endSimulation() {
+        document.getElementById('prompt-title').innerText = "TEST COMPLETE";
+        document.getElementById('prompt-desc').innerText = "Telemetry gathered successfully. The math holds.";
+        document.getElementById('prompt-math').innerText = "";
+        document.getElementById('action-buttons').innerHTML = '<button onclick="location.reload()">Return to Builder</button>';
+    }
+
+    // Init
+    renderBuilder();
+</script>
+</body>
+</html>
