@@ -1,0 +1,22 @@
+# OS Generated Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# Mobile Editor / IDE Specific Caches
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.tmp
+*.log
+
+# Local Build / Output Artifacts
+dist/
+build/
+node_modules/
